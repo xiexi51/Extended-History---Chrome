@@ -2,7 +2,7 @@
  * Extended History — background.js v3.3
  * Time tracking: purely event-driven per-tab, domain-bucketed by day.
  */
-importScripts('eh-idb.js');
+importScripts('eh-idb.js', 'url-rules.js');
 const IDB_STORAGE_KEY = 'eh_use_idb';
 const HISTORY_KEY  = 'eh_history';
 const TODAY_HISTORY_KEY = 'eh_today_history';  // Separate storage for today's history
@@ -405,9 +405,11 @@ async function _liveHistoryEntries(searchParams) {
     for (const item of items) {
       if (!item.url || !isTrackable(item.url)) continue;
       if (ignoreList.some(p => matchesIgnorePattern(item.url, p, item.title))) continue;
+      const url = canonicalHistoryUrl(item.url);
+      if (!url) continue;
       entries.push({
         id: `live_${item.lastVisitTime}_${Math.random().toString(36).slice(2, 6)}`,
-        url: normalizeUrl(item.url),
+        url,
         rawUrl: item.url,
         title: item.title || '',
         visitTime: item.lastVisitTime || Date.now(),
@@ -1234,11 +1236,12 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   // This runs on first install, updates, and reinstalls
   try {
     const items   = await chrome.history.search({ text:'', startTime:0, maxResults:100000 });
-    const entries = items.filter(i=>isTrackable(i.url)).map(i=>({
-      id:`bf_${i.lastVisitTime}_${Math.random().toString(36).slice(2,6)}`,
-      url:normalizeUrl(i.url), rawUrl:i.url, title:i.title||'',
-      visitTime:i.lastVisitTime||Date.now(), domain:domainOf(i.url), tabId:null, source:'backfill',
-    }));
+    const entries = items.filter(i=>isTrackable(i.url)).map(i=>{
+      const url = normalizeUrl(i.url);
+      return url && { id:`bf_${i.lastVisitTime}_${Math.random().toString(36).slice(2,6)}`,
+        url, rawUrl:i.url, title:i.title||'',
+        visitTime:i.lastVisitTime||Date.now(), domain:domainOf(i.url), tabId:null, source:'backfill' };
+    }).filter(Boolean);
     const existing    = await getAll();
     const existingSet = new Set(existing.map(e=>`${e.url}|${Math.floor(e.visitTime/5000)}`));
     const newOnes     = entries.filter(e=>!existingSet.has(`${e.url}|${Math.floor(e.visitTime/5000)}`));
@@ -1377,6 +1380,7 @@ async function backfillTitle(url, title, _isRetry = false) {
   if (!url || !title || !isTrackable(url)) return;
   if (title === 'New Tab' || title === 'Loading…' || title === 'Loading...') return;
   const norm = normalizeUrl(url);
+  if (!norm) return;
   const entries = await getAll();
   const now = Date.now();
   let bestIdx = -1, bestTime = 0;
@@ -1395,11 +1399,13 @@ async function backfillTitle(url, title, _isRetry = false) {
   await setAll(entries);
 }
 
-function normalizeUrl(url) { try { const u=new URL(url); u.hash=''; return u.toString().replace(/\/$/,''); } catch { return url; } }
+function normalizeUrl(url) { return canonicalHistoryUrl(url); }
 
 async function recordVisit(url, title, tabId) {
   if (!isTrackable(url)) return;
   if (await shouldIgnoreUrl(url, title)) return;
+  const norm = normalizeUrl(url);
+  if (!norm) return;
   const settings = await getSettings();
   const now      = Date.now();
   const syncInterval = typeof settings.syncInterval === 'number' ? settings.syncInterval : 30;
@@ -1410,7 +1416,6 @@ async function recordVisit(url, title, tabId) {
     // Still backfill title into existing entries if we have one within 5 min
     if (title) {
       const cutoff5 = now - 5000;
-      const norm = normalizeUrl(url);
       const entries = await getAll();
       const idx = entries.findLastIndex(e => e.url === norm && e.visitTime >= cutoff5);
       if (idx !== -1 && !entries[idx].title) {
@@ -1424,7 +1429,6 @@ async function recordVisit(url, title, tabId) {
   // ── Legacy mode (syncInterval === 0): write every visit immediately ──────
   const cutoff   = now - settings.retentionDays * 86400000;
   let entries    = await getAll();
-  const norm     = normalizeUrl(url);
   const dup      = entries.findIndex(e=>e.url===norm && (now-e.visitTime)<5000);
   if (dup !== -1) { if (title && !entries[dup].title) { entries[dup].title=title; await setAll(entries); } return; }
   entries.push({ id:`${now}_${Math.random().toString(36).slice(2,6)}`, url:norm, rawUrl:url, title:title||'', visitTime:now, domain:domainOf(url), tabId:tabId||null });
@@ -1817,7 +1821,7 @@ async function handle(msg) {
       for(const e of imported){
         if(!e.url||!isTrackable(e.url)) continue;
         if(e.visitTime&&e.visitTime<cutoff) continue;
-        const norm=normalizeUrl(e.url); const key=`${norm}|${Math.floor((e.visitTime||Date.now())/5000)}`;
+        const norm=normalizeUrl(e.url); if(!norm) continue; const key=`${norm}|${Math.floor((e.visitTime||Date.now())/5000)}`;
         if(existingSet.has(key)) continue;
         existing.push({id:`imp_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,url:norm,rawUrl:e.url,title:e.title||'',visitTime:e.visitTime||Date.now(),domain:domainOf(e.url),tabId:null,source:'import'});
         existingSet.add(key); count++;
@@ -1880,16 +1884,19 @@ async function handle(msg) {
       try {
         await chrome.storage.local.remove(BACKFILL_KEY);
         const items = await chrome.history.search({ text: '', startTime: 0, maxResults: 100000 });
-        const entries = items.filter(i => isTrackable(i.url)).map(i => ({
-          id:        `bf_${i.lastVisitTime}_${Math.random().toString(36).slice(2, 6)}`,
-          url:       normalizeUrl(i.url),
-          rawUrl:    i.url,
-          title:     i.title || '',
-          visitTime: i.lastVisitTime || Date.now(),
-          domain:    domainOf(i.url),
-          tabId:     null,
-          source:    'backfill',
-        }));
+        const entries = items.filter(i => isTrackable(i.url)).map(i => {
+          const url = normalizeUrl(i.url);
+          return url && {
+            id:        `bf_${i.lastVisitTime}_${Math.random().toString(36).slice(2, 6)}`,
+            url,
+            rawUrl:    i.url,
+            title:     i.title || '',
+            visitTime: i.lastVisitTime || Date.now(),
+            domain:    domainOf(i.url),
+            tabId:     null,
+            source:    'backfill',
+          };
+        }).filter(Boolean);
         const existing    = await getAll();
         const existingSet = new Set(existing.map(e => `${e.url}|${Math.floor(e.visitTime / 5000)}`));
         const newOnes     = entries.filter(e => !existingSet.has(`${e.url}|${Math.floor(e.visitTime / 5000)}`));
