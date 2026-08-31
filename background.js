@@ -418,7 +418,7 @@ async function _liveHistoryEntries(searchParams) {
         source: 'live',
       });
     }
-    return entries;
+    return mergeGameHistoryEntries(entries).entries;
   } catch {
     return [];
   }

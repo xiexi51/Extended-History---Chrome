@@ -32,11 +32,12 @@ assert.equal(new Set(gameUrls.map(canonicalHistoryUrl)).size, 1);
 const { entries: mergedGames } = mergeGameHistoryEntries([
   { id: 'one', url: 'https://lichess.org/0FF85WTT6RwD', visitTime: 100, title: 'First' },
   { id: 'two', url: 'https://lichess.org/0FF85WTT6RwD/black', visitTime: 200, title: 'Latest' },
-  { id: 'three', url: 'https://lichess.org/DrRYaLgg/white', visitTime: 300 },
-  { id: 'four', url: 'https://lishogi.org/HSDAFWsD0u6O/review', visitTime: 400 },
-  { id: 'five', url: 'https://lishogi.org/analysis', visitTime: 500 },
-  { id: 'six', url: 'https://example.com/page', visitTime: 600 },
-  { id: 'seven', url: 'https://example.com/page', visitTime: 700 },
+  { id: 'three', url: 'https://lichess.org/0FF85WTT6RwD', visitTime: 250 },
+  { id: 'four', url: 'https://lichess.org/DrRYaLgg/white', visitTime: 300 },
+  { id: 'five', url: 'https://lishogi.org/HSDAFWsD0u6O/review', visitTime: 400 },
+  { id: 'six', url: 'https://lishogi.org/analysis', visitTime: 500 },
+  { id: 'seven', url: 'https://example.com/page', visitTime: 600 },
+  { id: 'eight', url: 'https://example.com/page', visitTime: 700 },
 ]);
 assert.deepEqual(mergedGames.map(entry => entry.url).sort(), [
   'https://example.com/page',
@@ -46,8 +47,8 @@ assert.deepEqual(mergedGames.map(entry => entry.url).sort(), [
   'https://lishogi.org/HSDAFWsD0u6O',
 ]);
 const firstGame = mergedGames.find(entry => entry.url === 'https://lichess.org/0FF85WTT6RwD');
-assert.equal(firstGame.visitTime, 200);
-assert.equal(firstGame.visitCount, 2);
+assert.equal(firstGame.visitTime, 250);
+assert.equal(firstGame.visitCount, 3);
 assert.equal(firstGame.title, 'Latest');
 
 console.log('URL rule tests passed');
