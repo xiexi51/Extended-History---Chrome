@@ -469,7 +469,21 @@ async function flushTodayToHistory() {
   const existingSet = new Set(existing.map(e => `${e.url}|${Math.floor(e.visitTime / 5000)}`));
 
   let added = 0;
+  let updated = false;
   for (const e of todayEntries) {
+    if (isGameHistoryUrl(e.url)) {
+      const existingGame = existing.find(item => item.url === e.url);
+      if (existingGame) {
+        if (e.visitTime > existingGame.visitTime) {
+          existingGame.visitTime = e.visitTime;
+          existingGame.rawUrl = e.rawUrl;
+          existingGame.title = e.title || existingGame.title;
+          existingGame.visitCount = (existingGame.visitCount || 1) + 1;
+          updated = true;
+        }
+        continue;
+      }
+    }
     const key = `${e.url}|${Math.floor(e.visitTime / 5000)}`;
     if (existingSet.has(key)) continue;
     existingSet.add(key);
@@ -477,7 +491,7 @@ async function flushTodayToHistory() {
     added++;
   }
 
-  if (!added) return;
+  if (!added && !updated) return;
 
   // Apply retention/max cap then save
   existing = existing.filter(e => e.visitTime >= cutoff);
@@ -1246,7 +1260,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     const existingSet = new Set(existing.map(e=>`${e.url}|${Math.floor(e.visitTime/5000)}`));
     const newOnes     = entries.filter(e=>!existingSet.has(`${e.url}|${Math.floor(e.visitTime/5000)}`));
     if (newOnes.length) {
-      await setAll([...existing,...newOnes].sort((a,b)=>b.visitTime-a.visitTime));
+      await setAll(mergeGameHistoryEntries([...existing,...newOnes]).entries.sort((a,b)=>b.visitTime-a.visitTime));
       await updateTodayHistory();
     }
     await chrome.storage.local.set({ [BACKFILL_KEY]:true });
@@ -1313,9 +1327,14 @@ let _entriesCache = null;
 
 async function getAll() {
   if (_entriesCache) return _entriesCache;
-  if (await _useIdb()) { _entriesCache = await EhIdb.getAll(); return _entriesCache; }
-  const r = await chrome.storage.local.get(HISTORY_KEY);
-  _entriesCache = r[HISTORY_KEY] || [];
+  const useIdb = await _useIdb();
+  const stored = useIdb ? await EhIdb.getAll() : (await chrome.storage.local.get(HISTORY_KEY))[HISTORY_KEY] || [];
+  const merged = mergeGameHistoryEntries(stored);
+  _entriesCache = merged.entries;
+  if (merged.changed) {
+    if (useIdb) await EhIdb.setAll(_entriesCache);
+    else await chrome.storage.local.set({ [HISTORY_KEY]: _entriesCache });
+  }
   return _entriesCache;
 }
 async function setAll(entries) {
@@ -1429,6 +1448,17 @@ async function recordVisit(url, title, tabId) {
   // ── Legacy mode (syncInterval === 0): write every visit immediately ──────
   const cutoff   = now - settings.retentionDays * 86400000;
   let entries    = await getAll();
+  if (isGameHistoryUrl(norm)) {
+    const existingGame = entries.find(entry => entry.url === norm);
+    if (existingGame) {
+      existingGame.visitTime = now;
+      existingGame.rawUrl = url;
+      existingGame.title = title || existingGame.title;
+      existingGame.visitCount = (existingGame.visitCount || 1) + 1;
+      await setAll(entries);
+      return;
+    }
+  }
   const dup      = entries.findIndex(e=>e.url===norm && (now-e.visitTime)<5000);
   if (dup !== -1) { if (title && !entries[dup].title) { entries[dup].title=title; await setAll(entries); } return; }
   entries.push({ id:`${now}_${Math.random().toString(36).slice(2,6)}`, url:norm, rawUrl:url, title:title||'', visitTime:now, domain:domainOf(url), tabId:tabId||null });
@@ -1826,6 +1856,7 @@ async function handle(msg) {
         existing.push({id:`imp_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,url:norm,rawUrl:e.url,title:e.title||'',visitTime:e.visitTime||Date.now(),domain:domainOf(e.url),tabId:null,source:'import'});
         existingSet.add(key); count++;
       }
+      existing = mergeGameHistoryEntries(existing).entries;
       existing.sort((a,b)=>b.visitTime-a.visitTime); await setAll(existing);
       // Update today's history
       await updateTodayHistory();
@@ -1900,7 +1931,7 @@ async function handle(msg) {
         const existing    = await getAll();
         const existingSet = new Set(existing.map(e => `${e.url}|${Math.floor(e.visitTime / 5000)}`));
         const newOnes     = entries.filter(e => !existingSet.has(`${e.url}|${Math.floor(e.visitTime / 5000)}`));
-        if (newOnes.length) await setAll([...existing, ...newOnes].sort((a, b) => b.visitTime - a.visitTime));
+        if (newOnes.length) await setAll(mergeGameHistoryEntries([...existing, ...newOnes]).entries.sort((a, b) => b.visitTime - a.visitTime));
         await chrome.storage.local.set({ [BACKFILL_KEY]: true });
         await updateTodayHistory();
         return { success: true, imported: newOnes.length };
