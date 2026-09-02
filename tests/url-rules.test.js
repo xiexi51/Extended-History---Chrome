@@ -10,13 +10,15 @@ for (const [input, expected] of [
   ['https://lichess.org/DrRYaLgg/white', 'https://lichess.org/DrRYaLgg'],
   ['https://lishogi.org/HSDAFWsD0u6O', 'https://lishogi.org/HSDAFWsD0u6O'],
   ['https://lishogi.org/HSDAFWsD0u6O/review', 'https://lishogi.org/HSDAFWsD0u6O'],
-  ['https://lichess.org/analysis', ''],
-  ['https://lichess.org/settings', ''],
-  ['https://lichess.org/study/example', ''],
-  ['https://lichess.org/@/a-player', ''],
-  ['https://lishogi.org/analysis', ''],
-  ['https://lishogi.org/forum/general', ''],
-  ['https://lishogi.org/profile', ''],
+  ['https://lichess.org/analysis', 'https://lichess.org/analysis'],
+  ['https://lichess.org/settings', 'https://lichess.org/settings'],
+  ['https://lichess.org/study/example', 'https://lichess.org/study/example'],
+  ['https://lichess.org/@/a-player', 'https://lichess.org/@/a-player'],
+  ['https://lichess.org/training/SWrBA', 'https://lichess.org/training/SWrBA'],
+  ['https://lichess.org/racer/Q3u0a', 'https://lichess.org/racer/Q3u0a'],
+  ['https://lishogi.org/analysis', 'https://lishogi.org/analysis'],
+  ['https://lishogi.org/forum/general', 'https://lishogi.org/forum/general'],
+  ['https://lishogi.org/profile', 'https://lishogi.org/profile'],
   ['https://example.com/path/?a=1#section', 'https://example.com/path/?a=1'],
 ]) {
   assert.equal(canonicalHistoryUrl(input), expected, input);
@@ -45,6 +47,7 @@ assert.deepEqual(mergedGames.map(entry => entry.url).sort(), [
   'https://lichess.org/0FF85WTT6RwD',
   'https://lichess.org/DrRYaLgg',
   'https://lishogi.org/HSDAFWsD0u6O',
+  'https://lishogi.org/analysis',
 ]);
 const firstGame = mergedGames.find(entry => entry.url === 'https://lichess.org/0FF85WTT6RwD');
 assert.equal(firstGame.visitTime, 250);

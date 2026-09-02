@@ -15,11 +15,10 @@ function canonicalHistoryUrl(url) {
 
     if (GAME_HISTORY_HOSTS.has(host)) {
       const gameId = parsed.pathname.split('/').filter(Boolean)[0] || '';
-      if (!/^[A-Za-z0-9]{8}(?:[A-Za-z0-9]{4})?$/.test(gameId)
-          || GAME_HISTORY_RESERVED_PATHS.has(gameId.toLowerCase())) {
-        return '';
+      if (/^[A-Za-z0-9]{8}(?:[A-Za-z0-9]{4})?$/.test(gameId)
+          && !GAME_HISTORY_RESERVED_PATHS.has(gameId.toLowerCase())) {
+        return `${parsed.protocol}//${host}/${gameId}`;
       }
-      return `${parsed.protocol}//${host}/${gameId}`;
     }
 
     parsed.hash = '';
@@ -31,8 +30,12 @@ function canonicalHistoryUrl(url) {
 
 function isGameHistoryUrl(url) {
   try {
-    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-    return GAME_HISTORY_HOSTS.has(host) && canonicalHistoryUrl(url) !== '';
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const gameId = parsed.pathname.split('/').filter(Boolean)[0] || '';
+    return GAME_HISTORY_HOSTS.has(host)
+      && /^[A-Za-z0-9]{8}(?:[A-Za-z0-9]{4})?$/.test(gameId)
+      && !GAME_HISTORY_RESERVED_PATHS.has(gameId.toLowerCase());
   } catch {
     return false;
   }
@@ -46,10 +49,6 @@ function mergeGameHistoryEntries(entries) {
   for (const entry of entries) {
     const canonicalUrl = canonicalHistoryUrl(entry.url);
     if (!isGameHistoryUrl(entry.url)) {
-      try {
-        const host = new URL(entry.url).hostname.toLowerCase().replace(/^www\./, '');
-        if (GAME_HISTORY_HOSTS.has(host)) { changed = true; continue; }
-      } catch {}
       merged.push(entry);
       continue;
     }
